@@ -1,127 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useRef, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
-  FileText,
   Lock,
   ShieldCheck,
   Sparkles,
-  Upload,
 } from "lucide-react";
 
 import Header from "@/components/layout/Header";
 import AnalysisDashboard from "@/components/dashboard/AnalysisDashboard";
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+import CVUpload from "@/components/upload/CVUpload";
 
 export default function Home() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [error, setError] = useState("");
-  const [dragActive, setDragActive] = useState(false);
-
-  /* =========================================================
-     FILE VALIDATION
-     ========================================================= */
-
-  const validateAndSelectFile = (file: File) => {
-    setError("");
-
-    const allowedTypes = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
-      setSelectedFile(null);
-      setError("Please upload a PDF or DOCX file.");
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      setSelectedFile(null);
-      setError("File size must be 5 MB or smaller.");
-      return;
-    }
-
-    setSelectedFile(file);
-  };
-
-  /* =========================================================
-     FILE PICKER
-     ========================================================= */
-
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    validateAndSelectFile(file);
-
-    // Allows the same file to be selected again later.
-    event.target.value = "";
-  };
-
-  /* =========================================================
-     DRAG & DROP
-     ========================================================= */
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragActive(false);
-
-    const file = event.dataTransfer.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    validateAndSelectFile(file);
-  };
-
-  /* =========================================================
-     ANALYZE CV
-     ========================================================= */
-
-  const handleAnalyze = async () => {
-    if (!selectedFile) {
-      setError("Please select your CV first.");
-      return;
-    }
-
-    setError("");
-
-    /*
-     * =========================================================
-     * BACKEND INTEGRATION — TODO
-     * =========================================================
-     *
-     * Future flow:
-     *
-     * 1. POST /api/resumes
-     * 2. Backend validates file
-     * 3. Backend checks guest usage limit
-     * 4. Backend stores CV in private Supabase Storage
-     * 5. Backend creates resume record
-     * 6. POST /api/analyze
-     * 7. Backend returns analysis ID
-     * 8. GET /api/analysis/:id
-     *
-     * IMPORTANT:
-     * Never put Supabase secret keys or Gemini API keys here.
-     */
-
-    alert(
-      "CV is validated successfully. Backend analysis will be connected next.",
-    );
-  };
-
   return (
     <main className="min-h-screen bg-background text-foreground">
       {/* =========================================================
@@ -189,98 +81,11 @@ export default function Home() {
           </div>
 
           {/* =====================================================
-              CV UPLOAD CARD
+              CV UPLOAD COMPONENT
               ===================================================== */}
 
           <div className="w-full">
-            <div className="skillmatch-glow rounded-3xl border border-border bg-card p-3">
-              <div className="rounded-2xl border border-dashed border-border bg-background p-6 sm:p-8">
-                {/* Upload area */}
-                <div
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDragActive(true);
-                  }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`cursor-pointer rounded-2xl px-5 py-12 text-center transition-all sm:px-8 ${
-                    dragActive
-                      ? "bg-primary/5 ring-2 ring-primary/30"
-                      : "hover:bg-secondary/60"
-                  }`}
-                >
-                  {/* Upload icon */}
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    {selectedFile ? (
-                      <FileText className="h-7 w-7" />
-                    ) : (
-                      <Upload className="h-7 w-7" />
-                    )}
-                  </div>
-
-                  {/* File name */}
-                  <h2 className="mt-5 text-xl font-bold">
-                    {selectedFile ? selectedFile.name : "Upload your CV"}
-                  </h2>
-
-                  {/* Description */}
-                  <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                    {selectedFile
-                      ? "Your file passed the basic frontend validation."
-                      : "Drag and drop your CV here, or click to browse your files."}
-                  </p>
-
-                  {/* Supported formats */}
-                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                    <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
-                      PDF
-                    </span>
-
-                    <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
-                      DOCX
-                    </span>
-
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Maximum 5 MB
-                    </span>
-                  </div>
-
-                  {/* Hidden file input */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </div>
-
-                {/* Error */}
-                {error && (
-                  <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
-                    {error}
-                  </div>
-                )}
-
-                {/* Analyze button */}
-                <button
-                  type="button"
-                  onClick={handleAnalyze}
-                  disabled={!selectedFile}
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Analyze my CV
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-
-                {/* Privacy */}
-                <div className="mt-5 flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Your CV stays private and secure.
-                </div>
-              </div>
-            </div>
+            <CVUpload />
           </div>
         </div>
       </section>
@@ -293,7 +98,7 @@ export default function Home() {
           Demo data for UI development.
 
           FUTURE:
-          Backend API will provide real analysis data.
+          This will receive real analysis data from the backend.
           ========================================================= */}
 
       <AnalysisDashboard />
@@ -346,12 +151,8 @@ export default function Home() {
             </p>
           </div>
 
-          {/* =====================================================
-              DEVELOPER PROFILE LINKS
-              ===================================================== */}
-
+          {/* Developer links */}
           <div className="flex items-center gap-5 text-sm">
-            {/* Frontend Developer */}
             <Link
               href="/team/shahariar"
               className="cursor-pointer font-semibold text-foreground transition-colors duration-200 hover:text-primary"
@@ -359,7 +160,6 @@ export default function Home() {
               Frontend Developer
             </Link>
 
-            {/* Backend Developer */}
             <Link
               href="/team/sujoypal"
               className="cursor-pointer font-semibold text-foreground transition-colors duration-200 hover:text-primary"

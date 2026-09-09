@@ -10,6 +10,8 @@ import {
   X,
 } from "lucide-react";
 
+import { analyzeResume, uploadResume } from "@/lib/api";
+
 /*
  * ============================================================
  * SKILLMATCH AI — CV UPLOAD COMPONENT
@@ -18,24 +20,18 @@ import {
  * RESPONSIBILITY:
  * - Select CV
  * - Drag & drop CV
- * - Validate file type
- * - Validate maximum file size
- * - Prepare the file for backend upload
+ * - Frontend validation
+ * - Upload CV to backend
+ * - Start CV analysis
  *
- * SECURITY NOTE:
- * Frontend validation is NOT a security boundary.
- * The backend MUST validate the file again.
- *
- * BACKEND DEVELOPER:
- * The API integration section below clearly marks
- * where your backend endpoints should be connected.
+ * SECURITY:
+ * Frontend validation is only for UX.
+ * Backend MUST validate everything again.
  * ============================================================
  */
 
-/* Maximum allowed CV size = 5 MB */
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-/* Only these file types are allowed */
 const ALLOWED_FILE_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -54,26 +50,17 @@ export default function CVUpload() {
    * ==========================================================
    * FILE VALIDATION
    * ==========================================================
-   *
-   * This function checks:
-   * 1. File type
-   * 2. File size
-   *
-   * IMPORTANT:
-   * Backend must repeat these checks.
    */
   const validateFile = (file: File): boolean => {
     setError("");
     setSuccess("");
 
-    /* Check file type */
     if (!ALLOWED_FILE_TYPES.includes(file.type)) {
       setSelectedFile(null);
       setError("Please upload a PDF or DOCX file.");
       return false;
     }
 
-    /* Check maximum file size */
     if (file.size > MAX_FILE_SIZE) {
       setSelectedFile(null);
       setError("File size must be 5 MB or smaller.");
@@ -87,8 +74,6 @@ export default function CVUpload() {
    * ==========================================================
    * FILE SELECTION
    * ==========================================================
-   *
-   * Handles the normal file picker.
    */
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -99,12 +84,6 @@ export default function CVUpload() {
       setSelectedFile(file);
     }
 
-    /*
-     * Reset input value.
-     *
-     * This allows the user to select the same file again
-     * after removing it or receiving an error.
-     */
     event.target.value = "";
   };
 
@@ -148,47 +127,31 @@ export default function CVUpload() {
 
   /*
    * ==========================================================
-   * BACKEND INTEGRATION
+   * UPLOAD + ANALYZE
    * ==========================================================
    *
-   * CURRENT STATE:
-   * This project does not connect the CV directly to the
-   * backend yet.
+   * FLOW:
    *
-   * BACKEND DEVELOPER SHOULD CONNECT:
+   * 1. Upload CV
+   *      ↓
+   *    POST /api/resumes
    *
-   * STEP 1:
-   * POST /api/resumes
+   * 2. Receive resume ID
+   *      ↓
    *
-   * The frontend will eventually send the selected CV.
+   * 3. Start analysis
+   *      ↓
+   *    POST /api/analyze
    *
-   * STEP 2:
-   * Backend stores the file in PRIVATE Supabase Storage.
+   * 4. Receive analysis ID
    *
-   * STEP 3:
-   * Backend creates the resume database record.
-   *
-   * STEP 4:
-   * POST /api/analyze
-   *
-   * Backend starts CV analysis.
-   *
-   * STEP 5:
-   * Backend returns an analysis ID.
-   *
-   * STEP 6:
-   * Frontend navigates to:
-   *
-   * /analysis/[id]
-   *
-   * SECURITY:
-   * - Never trust frontend validation.
-   * - Backend must check authentication.
-   * - Backend must check file ownership.
-   * - Backend must enforce the 5 MB limit.
-   * - Backend must validate the actual file.
-   * - Backend must enforce the 3-analysis guest limit.
-   * - Backend should rate-limit analysis requests.
+   * Backend is responsible for:
+   * - Authentication
+   * - Guest limit
+   * - File validation
+   * - Ownership
+   * - Private storage
+   * - Rate limiting
    */
   const handleAnalyze = async () => {
     if (!selectedFile) {
@@ -202,45 +165,61 @@ export default function CVUpload() {
 
     try {
       /*
-       * ======================================================
-       * TODO — BACKEND API INTEGRATION
-       * ======================================================
-       *
-       * Example:
-       *
-       * const formData = new FormData();
-       * formData.append("file", selectedFile);
-       *
-       * const response = await fetch(
-       *   `${process.env.NEXT_PUBLIC_API_URL}/api/resumes`,
-       *   {
-       *     method: "POST",
-       *     body: formData,
-       *   }
-       * );
-       *
-       * IMPORTANT:
-       * Do NOT put backend secret keys in this component.
-       *
-       * The backend developer should replace this section
-       * when the backend API is ready.
+       * ------------------------------------------------------
+       * STEP 1 — UPLOAD CV
+       * ------------------------------------------------------
        */
+      const uploadResult = await uploadResume(selectedFile);
+
+      if (uploadResult.error) {
+        setError(uploadResult.error.message);
+        return;
+      }
+
+      if (!uploadResult.data?.id) {
+        setError("CV upload completed, but no resume ID was returned.");
+        return;
+      }
+
+      const resumeId = uploadResult.data.id;
 
       /*
-       * Temporary demo delay.
-       *
-       * This lets us test the UI loading state before the
-       * real backend is connected.
+       * ------------------------------------------------------
+       * STEP 2 — START ANALYSIS
+       * ------------------------------------------------------
        */
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const analysisResult = await analyzeResume(resumeId);
 
+      if (analysisResult.error) {
+        setError(analysisResult.error.message);
+        return;
+      }
+
+      if (!analysisResult.data?.analysisId) {
+        setError("Analysis could not be started.");
+        return;
+      }
+
+      /*
+       * ------------------------------------------------------
+       * SUCCESS
+       * ------------------------------------------------------
+       *
+       * Later we will use analysisId to load:
+       *
+       * GET /api/analysis/:id
+       *
+       * and show the real analysis dashboard.
+       */
       setSuccess(
-        "CV validated successfully. Backend analysis will be connected next."
+        "Your CV has been uploaded and analysis has started successfully."
       );
+
+      console.log("Resume ID:", resumeId);
+      console.log("Analysis ID:", analysisResult.data.analysisId);
     } catch {
       /*
-       * Never expose internal backend/server details
-       * directly to the user.
+       * Do not expose internal server details.
        */
       setError("Something went wrong. Please try again.");
     } finally {
@@ -270,7 +249,6 @@ export default function CVUpload() {
                 : "hover:bg-secondary/50"
             }`}
           >
-            {/* Upload icon */}
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               {selectedFile ? (
                 <FileText className="h-7 w-7" />
@@ -279,19 +257,16 @@ export default function CVUpload() {
               )}
             </div>
 
-            {/* Title */}
             <h2 className="mt-5 text-xl font-bold tracking-tight">
               {selectedFile ? selectedFile.name : "Upload your CV"}
             </h2>
 
-            {/* Description */}
             <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
               {selectedFile
                 ? "Your file passed the basic frontend validation."
                 : "Drag and drop your CV here, or click to browse your files."}
             </p>
 
-            {/* Supported formats */}
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold">
                 PDF
@@ -306,7 +281,6 @@ export default function CVUpload() {
               </span>
             </div>
 
-            {/* Hidden native input */}
             <input
               ref={fileInputRef}
               type="file"
@@ -335,7 +309,6 @@ export default function CVUpload() {
                 </div>
               </div>
 
-              {/* Remove button */}
               <button
                 type="button"
                 onClick={(event) => {
@@ -387,7 +360,7 @@ export default function CVUpload() {
             {isAnalyzing ? (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Preparing analysis...
+                Analyzing your CV...
               </>
             ) : (
               <>
