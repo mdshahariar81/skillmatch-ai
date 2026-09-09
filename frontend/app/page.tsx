@@ -1,31 +1,6 @@
 "use client";
 
-/**
- * SkillMatch AI - Main Landing Page
- *
- * RESPONSIBILITY:
- * This file contains the main public landing page and CV upload UI.
- *
- * BACKEND HANDOFF:
- * The frontend does NOT perform the real CV analysis.
- * The backend will later handle:
- *
- * 1. Authentication
- * 2. Guest usage limit
- * 3. CV upload
- * 4. Private Supabase Storage
- * 5. CV text extraction
- * 6. Skill extraction
- * 7. Skill normalization
- * 8. Job matching
- * 9. Skill-gap calculation
- * 10. Roadmap generation
- *
- * IMPORTANT SECURITY:
- * Frontend validation is only for user experience.
- * Backend MUST validate everything again.
- */
-
+import Link from "next/link";
 import { ChangeEvent, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -37,116 +12,49 @@ import {
   Upload,
 } from "lucide-react";
 
-// Shared site header.
-// BACKEND/AUTH HANDOFF:
-// Header can later read the Supabase Auth session.
-// Guest user -> "Sign in"
-// Logged-in user -> profile/avatar/menu
 import Header from "@/components/layout/Header";
+import AnalysisDashboard from "@/components/dashboard/AnalysisDashboard";
 
-/**
- * Maximum allowed CV size.
- *
- * Requirement:
- * PDF/DOCX only
- * Maximum 5 MB
- *
- * SECURITY:
- * This limit MUST also be enforced by the backend.
- */
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export default function Home() {
-  /**
-   * Reference to the hidden native file input.
-   * Clicking the custom upload area opens the file picker.
-   */
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * Currently selected CV.
-   *
-   * NOTE:
-   * This file stays in browser memory for now.
-   * Later the backend upload flow will send it securely
-   * to the backend/private Supabase Storage.
-   */
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  /**
-   * Upload/validation error shown to the user.
-   */
   const [error, setError] = useState("");
-
-  /**
-   * Used to provide visual feedback while dragging a file
-   * over the upload area.
-   */
   const [dragActive, setDragActive] = useState(false);
 
-  /**
-   * Validates a selected CV before accepting it.
-   *
-   * SECURITY NOTE:
-   * This is NOT the real security boundary.
-   *
-   * Backend MUST repeat:
-   * - file type validation
-   * - file size validation
-   * - file content validation
-   * - authentication/authorization
-   *
-   * BACKEND HANDOFF:
-   * After validation, this File object will eventually be
-   * uploaded through the backend API.
-   */
+  /* =========================================================
+     FILE VALIDATION
+     ========================================================= */
+
   const validateAndSelectFile = (file: File) => {
     setError("");
 
-    /**
-     * Allowed file MIME types.
-     *
-     * Project requirement:
-     * PDF + DOCX only.
-     */
     const allowedTypes = [
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
 
-    /**
-     * Check file type.
-     *
-     * SECURITY:
-     * Backend MUST NOT trust this MIME type because
-     * browser-provided file metadata can be manipulated.
-     */
     if (!allowedTypes.includes(file.type)) {
       setSelectedFile(null);
       setError("Please upload a PDF or DOCX file.");
       return;
     }
 
-    /**
-     * Check maximum file size.
-     *
-     * Maximum = 5 MB
-     */
     if (file.size > MAX_FILE_SIZE) {
       setSelectedFile(null);
       setError("File size must be 5 MB or smaller.");
       return;
     }
 
-    /**
-     * File passed frontend validation.
-     */
     setSelectedFile(file);
   };
 
-  /**
-   * Handles file selection through the native file picker.
-   */
+  /* =========================================================
+     FILE PICKER
+     ========================================================= */
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
@@ -155,14 +63,17 @@ export default function Home() {
     }
 
     validateAndSelectFile(file);
+
+    // Allows the same file to be selected again later.
+    event.target.value = "";
   };
 
-  /**
-   * Handles drag-and-drop CV upload.
-   */
+  /* =========================================================
+     DRAG & DROP
+     ========================================================= */
+
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-
     setDragActive(false);
 
     const file = event.dataTransfer.files?.[0];
@@ -174,56 +85,10 @@ export default function Home() {
     validateAndSelectFile(file);
   };
 
-  /**
-   * Starts CV analysis.
-   *
-   * CURRENT:
-   * Only confirms that frontend validation succeeded.
-   *
-   * BACKEND INTEGRATION:
-   * This function will later call the backend APIs.
-   *
-   * Expected flow:
-   *
-   * 1. Check whether user is guest or authenticated.
-   *
-   * 2. Backend checks guest usage limit.
-   *    IMPORTANT:
-   *    Do NOT implement the real limit using localStorage.
-   *
-   * 3. Upload CV to:
-   *
-   *    POST /api/resumes
-   *
-   * 4. Backend stores CV inside PRIVATE Supabase Storage.
-   *
-   * 5. Backend creates resume record.
-   *
-   * 6. Backend starts analysis:
-   *
-   *    POST /api/analyze
-   *
-   * 7. Backend returns analysis ID.
-   *
-   * 8. Frontend loads:
-   *
-   *    GET /api/analysis/:id
-   *
-   * 9. Frontend displays:
-   *    - detected skills
-   *    - job matches
-   *    - skill gaps
-   *    - recommendations
-   *
-   * SECURITY:
-   * Backend MUST enforce:
-   * - authentication
-   * - guest limit
-   * - ownership
-   * - rate limiting
-   * - file validation
-   * - private storage
-   */
+  /* =========================================================
+     ANALYZE CV
+     ========================================================= */
+
   const handleAnalyze = async () => {
     if (!selectedFile) {
       setError("Please select your CV first.");
@@ -233,45 +98,23 @@ export default function Home() {
     setError("");
 
     /*
-     * ============================================================
-     * TODO: BACKEND INTEGRATION
-     * ============================================================
+     * =========================================================
+     * BACKEND INTEGRATION — TODO
+     * =========================================================
      *
-     * Example future implementation:
+     * Future flow:
      *
-     * const formData = new FormData();
-     * formData.append("file", selectedFile);
-     *
-     * const response = await fetch("/api/resumes", {
-     *   method: "POST",
-     *   body: formData,
-     * });
-     *
-     * Then:
-     *
-     * const resume = await response.json();
-     *
-     * Next call:
-     *
-     * await fetch("/api/analyze", {
-     *   method: "POST",
-     *   headers: {
-     *     "Content-Type": "application/json",
-     *   },
-     *   body: JSON.stringify({
-     *     resumeId: resume.id,
-     *   }),
-     * });
+     * 1. POST /api/resumes
+     * 2. Backend validates file
+     * 3. Backend checks guest usage limit
+     * 4. Backend stores CV in private Supabase Storage
+     * 5. Backend creates resume record
+     * 6. POST /api/analyze
+     * 7. Backend returns analysis ID
+     * 8. GET /api/analysis/:id
      *
      * IMPORTANT:
-     *
-     * The actual API implementation depends on the backend
-     * architecture created by the backend developer.
-     *
-     * Frontend should NOT directly access:
-     * - Supabase secret key
-     * - Gemini secret/API key
-     * - service-role credentials
+     * Never put Supabase secret keys or Gemini API keys here.
      */
 
     alert(
@@ -282,17 +125,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       {/* =========================================================
-          SHARED HEADER
-          =========================================================
-          
-          Header is separated into its own component so that
-          authentication/navigation logic does not make this page
-          unnecessarily large.
-
-          BACKEND HANDOFF:
-          The Header component can later receive the Supabase
-          authenticated user/session and show the correct UI.
-      */}
+          HEADER
+          ========================================================= */}
 
       <Header />
 
@@ -301,12 +135,7 @@ export default function Home() {
           ========================================================= */}
 
       <section className="relative overflow-hidden">
-        {/* 
-          Subtle background decoration.
-
-          This is intentionally very soft.
-          We do NOT want excessive glassmorphism/glow.
-        */}
+        {/* Soft background decoration */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
@@ -318,7 +147,7 @@ export default function Home() {
               ===================================================== */}
 
           <div>
-            {/* Small brand badge */}
+            {/* Badge */}
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1.5 text-xs font-bold tracking-wide text-primary">
               <Sparkles className="h-3.5 w-3.5" />
               AI POWERED CAREER INSIGHTS
@@ -328,6 +157,7 @@ export default function Home() {
             <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
               Know your skills.
               <br />
+
               <span className="skillmatch-gradient">
                 Find your path.
               </span>
@@ -366,7 +196,6 @@ export default function Home() {
             <div className="skillmatch-glow rounded-3xl border border-border bg-card p-3">
               <div className="rounded-2xl border border-dashed border-border bg-background p-6 sm:p-8">
                 {/* Upload area */}
-
                 <div
                   onDragOver={(event) => {
                     event.preventDefault();
@@ -377,7 +206,7 @@ export default function Home() {
                   onClick={() => fileInputRef.current?.click()}
                   className={`cursor-pointer rounded-2xl px-5 py-12 text-center transition-all sm:px-8 ${
                     dragActive
-                      ? "border-primary bg-primary/5"
+                      ? "bg-primary/5 ring-2 ring-primary/30"
                       : "hover:bg-secondary/60"
                   }`}
                 >
@@ -390,19 +219,19 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* File name / title */}
+                  {/* File name */}
                   <h2 className="mt-5 text-xl font-bold">
                     {selectedFile ? selectedFile.name : "Upload your CV"}
                   </h2>
 
-                  {/* Upload description */}
+                  {/* Description */}
                   <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                     {selectedFile
                       ? "Your file passed the basic frontend validation."
                       : "Drag and drop your CV here, or click to browse your files."}
                   </p>
 
-                  {/* Supported file types */}
+                  {/* Supported formats */}
                   <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                     <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
                       PDF
@@ -417,13 +246,7 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* 
-                    Hidden native file input.
-
-                    SECURITY:
-                    accept attribute is only a UX filter.
-                    Backend MUST validate the real uploaded file.
-                  */}
+                  {/* Hidden file input */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -433,20 +256,14 @@ export default function Home() {
                   />
                 </div>
 
-                {/* =================================================
-                    ERROR MESSAGE
-                    ================================================= */}
-
+                {/* Error */}
                 {error && (
                   <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
                     {error}
                   </div>
                 )}
 
-                {/* =================================================
-                    ANALYZE BUTTON
-                    ================================================= */}
-
+                {/* Analyze button */}
                 <button
                   type="button"
                   onClick={handleAnalyze}
@@ -457,10 +274,7 @@ export default function Home() {
                   <ArrowRight className="h-4 w-4" />
                 </button>
 
-                {/* =================================================
-                    PRIVACY NOTICE
-                    ================================================= */}
-
+                {/* Privacy */}
                 <div className="mt-5 flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
                   <ShieldCheck className="h-4 w-4 text-primary" />
                   Your CV stays private and secure.
@@ -470,6 +284,19 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* =========================================================
+          ANALYSIS DASHBOARD
+          =========================================================
+          
+          CURRENT:
+          Demo data for UI development.
+
+          FUTURE:
+          Backend API will provide real analysis data.
+          ========================================================= */}
+
+      <AnalysisDashboard />
 
       {/* =========================================================
           TRUST / ABOUT SECTION
@@ -510,17 +337,35 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-7 sm:px-8 md:flex-row md:items-center md:justify-between">
           {/* Brand */}
           <div>
-            <p className="text-sm font-bold">SkillMatch AI</p>
+            <p className="text-sm font-bold text-foreground">
+              SkillMatch AI
+            </p>
 
             <p className="mt-1 text-xs text-muted-foreground">
               Find the gap. Build the path.
             </p>
           </div>
 
-          {/* Developer roles */}
-          <div className="flex gap-5 text-xs text-muted-foreground">
-            <span>Frontend Developer</span>
-            <span>Backend Developer</span>
+          {/* =====================================================
+              DEVELOPER PROFILE LINKS
+              ===================================================== */}
+
+          <div className="flex items-center gap-5 text-sm">
+            {/* Frontend Developer */}
+            <Link
+              href="/team/shahariar"
+              className="cursor-pointer font-semibold text-foreground transition-colors duration-200 hover:text-primary"
+            >
+              Frontend Developer
+            </Link>
+
+            {/* Backend Developer */}
+            <Link
+              href="/team/sujoypal"
+              className="cursor-pointer font-semibold text-foreground transition-colors duration-200 hover:text-primary"
+            >
+              Backend Developer
+            </Link>
           </div>
         </div>
       </footer>
@@ -529,7 +374,7 @@ export default function Home() {
 }
 
 /* ===============================================================
-   REUSABLE BENEFIT COMPONENT
+   BENEFIT COMPONENT
    =============================================================== */
 
 function Benefit({
@@ -545,13 +390,13 @@ function Benefit({
         {icon}
       </span>
 
-      {title}
+      <span>{title}</span>
     </div>
   );
 }
 
 /* ===============================================================
-   REUSABLE TRUST ITEM COMPONENT
+   TRUST ITEM COMPONENT
    =============================================================== */
 
 function TrustItem({
@@ -571,7 +416,9 @@ function TrustItem({
       </div>
 
       {/* Title */}
-      <h3 className="mt-4 text-base font-bold">{title}</h3>
+      <h3 className="mt-4 text-base font-bold text-foreground">
+        {title}
+      </h3>
 
       {/* Description */}
       <p className="mt-2 text-sm leading-6 text-muted-foreground">

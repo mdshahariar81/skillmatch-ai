@@ -1,227 +1,194 @@
 "use client";
 
-/**
- * SkillMatch AI — CV Upload Component
- *
- * RESPONSIBILITY:
- * - PDF/DOCX file selection
- * - Drag & drop
- * - 5 MB frontend validation
- * - Upload UI state
- * - Error handling
- *
- * BACKEND HANDOFF:
- * This component is intentionally separated from the main page.
- * The backend developer can later connect the real API here.
- *
- * Expected backend flow:
- *
- * CVUpload
- *    ↓
- * POST /api/resumes
- *    ↓
- * Private Supabase Storage
- *    ↓
- * Resume record created
- *    ↓
- * POST /api/analyze
- *    ↓
- * Analysis result
- *
- * SECURITY:
- * Frontend validation is NOT a security boundary.
- * Backend MUST validate the file again.
- */
-
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import {
   ArrowRight,
+  CheckCircle2,
   FileText,
   ShieldCheck,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
 
-/**
- * Maximum CV size = 5 MB.
+/*
+ * ============================================================
+ * SKILLMATCH AI — CV UPLOAD COMPONENT
+ * ============================================================
  *
- * IMPORTANT:
- * Backend MUST enforce the same limit.
+ * RESPONSIBILITY:
+ * - Select CV
+ * - Drag & drop CV
+ * - Validate file type
+ * - Validate maximum file size
+ * - Prepare the file for backend upload
+ *
+ * SECURITY NOTE:
+ * Frontend validation is NOT a security boundary.
+ * The backend MUST validate the file again.
+ *
+ * BACKEND DEVELOPER:
+ * The API integration section below clearly marks
+ * where your backend endpoints should be connected.
+ * ============================================================
  */
+
+/* Maximum allowed CV size = 5 MB */
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-/**
- * Allowed MIME types.
- *
- * PDF + DOCX only.
- */
+/* Only these file types are allowed */
 const ALLOWED_FILE_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
-interface CVUploadProps {
-  /**
-   * Optional callback.
-   *
-   * BACKEND HANDOFF:
-   * The parent page can receive the validated file here
-   * and later start the backend upload/analysis flow.
-   */
-  onAnalyze?: (file: File) => void;
-}
-
-export default function CVUpload({ onAnalyze }: CVUploadProps) {
+export default function CVUpload() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [success, setSuccess] = useState("");
 
-  /**
-   * Validate a CV before accepting it.
+  /*
+   * ==========================================================
+   * FILE VALIDATION
+   * ==========================================================
    *
-   * SECURITY:
-   * This validation only protects the frontend UX.
+   * This function checks:
+   * 1. File type
+   * 2. File size
    *
-   * Backend MUST independently validate:
-   * - authentication
-   * - authorization
-   * - actual file type
-   * - file size
-   * - file content
-   * - ownership
-   * - rate limits
+   * IMPORTANT:
+   * Backend must repeat these checks.
    */
   const validateFile = (file: File): boolean => {
     setError("");
+    setSuccess("");
 
-    // Check file type.
+    /* Check file type */
     if (!ALLOWED_FILE_TYPES.includes(file.type)) {
       setSelectedFile(null);
-
       setError("Please upload a PDF or DOCX file.");
-
       return false;
     }
 
-    // Check maximum file size.
+    /* Check maximum file size */
     if (file.size > MAX_FILE_SIZE) {
       setSelectedFile(null);
-
       setError("File size must be 5 MB or smaller.");
-
       return false;
     }
-
-    setSelectedFile(file);
 
     return true;
   };
 
-  /**
-   * Normal file picker.
+  /*
+   * ==========================================================
+   * FILE SELECTION
+   * ==========================================================
+   *
+   * Handles the normal file picker.
    */
-  const handleFileChange = (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
-    if (!file) {
-      return;
+    if (!file) return;
+
+    if (validateFile(file)) {
+      setSelectedFile(file);
     }
 
-    validateFile(file);
+    /*
+     * Reset input value.
+     *
+     * This allows the user to select the same file again
+     * after removing it or receiving an error.
+     */
+    event.target.value = "";
   };
 
-  /**
-   * Drag over upload area.
+  /*
+   * ==========================================================
+   * DRAG & DROP
+   * ==========================================================
    */
-  const handleDragOver = (
-    event: React.DragEvent<HTMLDivElement>,
-  ) => {
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragActive(true);
   };
 
-  /**
-   * Drag leaves upload area.
-   */
   const handleDragLeave = () => {
     setDragActive(false);
   };
 
-  /**
-   * File dropped into upload area.
-   */
-  const handleDrop = (
-    event: React.DragEvent<HTMLDivElement>,
-  ) => {
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragActive(false);
 
     const file = event.dataTransfer.files?.[0];
 
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
-    validateFile(file);
+    if (validateFile(file)) {
+      setSelectedFile(file);
+    }
   };
 
-  /**
-   * Remove selected file.
+  /*
+   * ==========================================================
+   * REMOVE SELECTED FILE
+   * ==========================================================
    */
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setError("");
-
-    // Reset native file input.
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    setSuccess("");
   };
 
-  /**
-   * Start CV analysis.
+  /*
+   * ==========================================================
+   * BACKEND INTEGRATION
+   * ==========================================================
    *
-   * CURRENT:
-   * This only demonstrates the frontend flow.
+   * CURRENT STATE:
+   * This project does not connect the CV directly to the
+   * backend yet.
    *
-   * BACKEND HANDOFF:
+   * BACKEND DEVELOPER SHOULD CONNECT:
    *
-   * Replace/extend this section when the backend API is ready.
+   * STEP 1:
+   * POST /api/resumes
    *
-   * Expected flow:
+   * The frontend will eventually send the selected CV.
    *
-   * 1. User uploads CV.
+   * STEP 2:
+   * Backend stores the file in PRIVATE Supabase Storage.
    *
-   * 2. Backend checks guest/authenticated user.
+   * STEP 3:
+   * Backend creates the resume database record.
    *
-   * 3. Backend checks the guest's allowed usage count.
+   * STEP 4:
+   * POST /api/analyze
    *
-   * 4. Backend receives the CV.
+   * Backend starts CV analysis.
    *
-   * 5. Backend stores it in PRIVATE Supabase Storage.
+   * STEP 5:
+   * Backend returns an analysis ID.
    *
-   * 6. Backend creates resume record.
+   * STEP 6:
+   * Frontend navigates to:
    *
-   * 7. Backend starts analysis.
+   * /analysis/[id]
    *
-   * 8. Backend returns analysis ID.
-   *
-   * 9. Frontend navigates to analysis/results page.
-   *
-   * IMPORTANT:
-   *
-   * DO NOT implement the real 3-analysis limit using:
-   * - localStorage
-   * - cookies controlled only by frontend
-   * - React state
-   *
-   * The backend must enforce the actual limit.
+   * SECURITY:
+   * - Never trust frontend validation.
+   * - Backend must check authentication.
+   * - Backend must check file ownership.
+   * - Backend must enforce the 5 MB limit.
+   * - Backend must validate the actual file.
+   * - Backend must enforce the 3-analysis guest limit.
+   * - Backend should rate-limit analysis requests.
    */
   const handleAnalyze = async () => {
     if (!selectedFile) {
@@ -230,59 +197,52 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
     }
 
     setError("");
+    setSuccess("");
     setIsAnalyzing(true);
 
     try {
-      /**
-       * ==========================================================
-       * TODO: BACKEND INTEGRATION
-       * ==========================================================
+      /*
+       * ======================================================
+       * TODO — BACKEND API INTEGRATION
+       * ======================================================
        *
        * Example:
        *
        * const formData = new FormData();
        * formData.append("file", selectedFile);
        *
-       * const response = await fetch("/api/resumes", {
-       *   method: "POST",
-       *   body: formData,
-       * });
+       * const response = await fetch(
+       *   `${process.env.NEXT_PUBLIC_API_URL}/api/resumes`,
+       *   {
+       *     method: "POST",
+       *     body: formData,
+       *   }
+       * );
        *
-       * const resume = await response.json();
+       * IMPORTANT:
+       * Do NOT put backend secret keys in this component.
        *
-       * Then:
-       *
-       * const analysisResponse = await fetch("/api/analyze", {
-       *   method: "POST",
-       *   headers: {
-       *     "Content-Type": "application/json",
-       *   },
-       *   body: JSON.stringify({
-       *     resumeId: resume.id,
-       *   }),
-       * });
-       *
-       * Backend API contract:
-       *
-       * POST /api/resumes
-       * POST /api/analyze
-       * GET  /api/analysis/:id
-       *
-       * The backend developer should replace this demo
-       * behavior with the real API implementation.
+       * The backend developer should replace this section
+       * when the backend API is ready.
        */
 
-      await new Promise((resolve) => setTimeout(resolve, 700));
-
-      onAnalyze?.(selectedFile);
-    } catch {
-      /**
-       * Never expose internal backend errors directly to users.
-       * Backend should return safe/public error messages.
+      /*
+       * Temporary demo delay.
+       *
+       * This lets us test the UI loading state before the
+       * real backend is connected.
        */
-      setError(
-        "Something went wrong while starting the analysis.",
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+
+      setSuccess(
+        "CV validated successfully. Backend analysis will be connected next."
       );
+    } catch {
+      /*
+       * Never expose internal backend/server details
+       * directly to the user.
+       */
+      setError("Something went wrong. Please try again.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -290,17 +250,15 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
 
   return (
     <div className="w-full">
-      {/* =========================================================
-          OUTER UPLOAD CARD
-          ========================================================= */}
-
-      <div className="skillmatch-glow rounded-3xl border border-border bg-card p-3">
+      {/* ======================================================
+          OUTER CARD
+          ====================================================== */}
+      <div className="rounded-3xl border border-border bg-card p-3 shadow-sm">
         <div className="rounded-2xl border border-dashed border-border bg-background p-6 sm:p-8">
 
-          {/* =====================================================
-              DROP ZONE
-              ===================================================== */}
-
+          {/* ==================================================
+              UPLOAD AREA
+              ================================================== */}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -309,7 +267,7 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
             className={`cursor-pointer rounded-2xl px-5 py-12 text-center transition-all sm:px-8 ${
               dragActive
                 ? "bg-primary/5 ring-2 ring-primary/30"
-                : "hover:bg-secondary/60"
+                : "hover:bg-secondary/50"
             }`}
           >
             {/* Upload icon */}
@@ -322,26 +280,24 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
             </div>
 
             {/* Title */}
-            <h2 className="mt-5 text-xl font-bold">
-              {selectedFile
-                ? selectedFile.name
-                : "Upload your CV"}
+            <h2 className="mt-5 text-xl font-bold tracking-tight">
+              {selectedFile ? selectedFile.name : "Upload your CV"}
             </h2>
 
             {/* Description */}
             <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
               {selectedFile
-                ? "Your CV passed the basic frontend validation."
+                ? "Your file passed the basic frontend validation."
                 : "Drag and drop your CV here, or click to browse your files."}
             </p>
 
             {/* Supported formats */}
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
+              <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold">
                 PDF
               </span>
 
-              <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
+              <span className="rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold">
                 DOCX
               </span>
 
@@ -350,15 +306,7 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
               </span>
             </div>
 
-            {/* =================================================
-                NATIVE FILE INPUT
-
-                SECURITY:
-                "accept" only filters the browser picker.
-                It does NOT provide real security.
-                Backend validation is mandatory.
-                ================================================= */}
-
+            {/* Hidden native input */}
             <input
               ref={fileInputRef}
               type="file"
@@ -368,16 +316,13 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
             />
           </div>
 
-          {/* =====================================================
+          {/* ==================================================
               SELECTED FILE
-              ===================================================== */}
-
+              ================================================== */}
           {selectedFile && (
             <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-secondary/40 px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <FileText className="h-4 w-4" />
-                </div>
+                <FileText className="h-5 w-5 shrink-0 text-primary" />
 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
@@ -397,7 +342,7 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
                   event.stopPropagation();
                   handleRemoveFile();
                 }}
-                className="ml-3 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                className="rounded-lg p-2 text-muted-foreground transition hover:bg-background hover:text-foreground"
                 aria-label="Remove selected CV"
               >
                 <X className="h-4 w-4" />
@@ -405,20 +350,34 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
             </div>
           )}
 
-          {/* =====================================================
+          {/* ==================================================
               ERROR MESSAGE
-              ===================================================== */}
-
+              ================================================== */}
           {error && (
-            <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
+            <div
+              role="alert"
+              className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive"
+            >
               {error}
             </div>
           )}
 
-          {/* =====================================================
-              ANALYZE BUTTON
-              ===================================================== */}
+          {/* ==================================================
+              SUCCESS MESSAGE
+              ================================================== */}
+          {success && (
+            <div
+              role="status"
+              className="mt-4 flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-medium text-primary"
+            >
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{success}</span>
+            </div>
+          )}
 
+          {/* ==================================================
+              ANALYZE BUTTON
+              ================================================== */}
           <button
             type="button"
             onClick={handleAnalyze}
@@ -438,15 +397,13 @@ export default function CVUpload({ onAnalyze }: CVUploadProps) {
             )}
           </button>
 
-          {/* =====================================================
+          {/* ==================================================
               PRIVACY NOTICE
-              ===================================================== */}
-
+              ================================================== */}
           <div className="mt-5 flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
             <ShieldCheck className="h-4 w-4 text-primary" />
             Your CV stays private and secure.
           </div>
-
         </div>
       </div>
     </div>
