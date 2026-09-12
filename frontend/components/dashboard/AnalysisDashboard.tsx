@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import {
   ArrowRight,
   BarChart3,
@@ -205,6 +207,67 @@ function StatCard({
 }
 
 export default function AnalysisDashboard() {
+  const roadmapPlaceholders = [
+    "Machine Learning Engineer",
+    "Website Designer",
+    "Electrical Engineer",
+    "AI Engineer",
+    "Cybersecurity Analyst",
+    "Frontend Developer",
+    "Data Scientist",
+  ];
+
+  const [roadmapInput, setRoadmapInput] = useState("");
+  const [placeholderText, setPlaceholderText] = useState("");
+  const [isRoadmapInputActive, setIsRoadmapInputActive] = useState(false);
+
+  useEffect(() => {
+    if (isRoadmapInputActive || roadmapInput) {
+      setPlaceholderText("");
+      return;
+    }
+
+    let textIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const typeNext = () => {
+      const currentText = roadmapPlaceholders[textIndex];
+
+      if (!isDeleting) {
+        setPlaceholderText(currentText.slice(0, charIndex + 1));
+        charIndex += 1;
+
+        if (charIndex === currentText.length) {
+          timer = setTimeout(() => {
+            isDeleting = true;
+            typeNext();
+          }, 1600);
+          return;
+        }
+
+        timer = setTimeout(typeNext, 75);
+      } else {
+        setPlaceholderText(currentText.slice(0, charIndex - 1));
+        charIndex -= 1;
+
+        if (charIndex === 0) {
+          isDeleting = false;
+          textIndex = (textIndex + 1) % roadmapPlaceholders.length;
+          timer = setTimeout(typeNext, 350);
+          return;
+        }
+
+        timer = setTimeout(typeNext, 40);
+      }
+    };
+
+    typeNext();
+
+    return () => clearTimeout(timer);
+  }, [isRoadmapInputActive, roadmapInput]);
+
   return (
     <section className="border-t border-border/70 bg-background">
       <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
@@ -469,7 +532,14 @@ export default function AnalysisDashboard() {
             <div className="flex w-full gap-2 lg:max-w-2xl">
               <input
                 type="text"
-                placeholder="e.g. Machine Learning Engineer"
+                value={roadmapInput}
+                onChange={(event) => setRoadmapInput(event.target.value)}
+                onFocus={() => setIsRoadmapInputActive(true)}
+                placeholder={
+                  placeholderText
+                    ? `e.g. ${placeholderText}`
+                    : "e.g. Machine Learning Engineer"
+                }
                 className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none transition focus:ring-2 focus:ring-primary/30"
               />
 
