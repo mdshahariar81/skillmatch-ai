@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 
-import { analyzeResume, uploadResume } from "@/lib/api";
+import { analyzeResume, uploadResume, getAnalysis, AnalysisResponse } from "@/lib/api";
 
 /*
  * ============================================================
@@ -37,7 +37,11 @@ const ALLOWED_FILE_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
-export default function CVUpload() {
+export default function CVUpload({
+  onAnalysisComplete,
+}: {
+  onAnalysisComplete: (result: AnalysisResponse) => void;
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -204,19 +208,19 @@ export default function CVUpload() {
        * ------------------------------------------------------
        * SUCCESS
        * ------------------------------------------------------
-       *
-       * Later we will use analysisId to load:
-       *
-       * GET /api/analysis/:id
-       *
-       * and show the real analysis dashboard.
        */
       setSuccess(
         "Your CV has been uploaded and analysis has started successfully."
       );
 
-      console.log("Resume ID:", resumeId);
-      console.log("Analysis ID:", analysisResult.data.analysisId);
+      // Fetch the full analysis result and hand it up to the page
+      const fullResult = await getAnalysis(analysisResult.data.analysisId);
+
+      if (fullResult.data) {
+        onAnalysisComplete(fullResult.data);
+      } else if (fullResult.error) {
+        setError(fullResult.error.message);
+      }
     } catch {
       /*
        * Do not expose internal server details.

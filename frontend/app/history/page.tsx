@@ -13,80 +13,21 @@ import {
   Target,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-type Analysis = {
-  id: number;
-  fileName: string;
-  date: string;
-  time: string;
-  skills: number;
-  matches: number;
-  topMatch: string;
-  score: number;
-  status: "Completed" | "Processing" | "Failed";
+import { getAnalysisHistory } from "@/lib/api";
+
+type HistoryItem = {
+  analysisId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  resumeFileName: string;
+  createdAt: string;
+  overallScore: number | null;
+  topJobMatch: { title: string; score: number } | null;
 };
 
-const analyses: Analysis[] = [
-  {
-    id: 1,
-    fileName: "My CV.pdf",
-    date: "Sep 10, 2026",
-    time: "10:42 AM",
-    skills: 18,
-    matches: 5,
-    topMatch: "AI Engineer",
-    score: 88,
-    status: "Completed",
-  },
-  {
-    id: 2,
-    fileName: "Data Analyst CV.pdf",
-    date: "Sep 02, 2026",
-    time: "03:18 PM",
-    skills: 15,
-    matches: 3,
-    topMatch: "Data Analyst",
-    score: 82,
-    status: "Completed",
-  },
-  {
-    id: 3,
-    fileName: "Frontend Developer.pdf",
-    date: "Aug 28, 2026",
-    time: "11:25 AM",
-    skills: 14,
-    matches: 4,
-    topMatch: "Frontend Developer",
-    score: 86,
-    status: "Completed",
-  },
-  {
-    id: 4,
-    fileName: "ML Resume.pdf",
-    date: "Aug 15, 2026",
-    time: "09:12 AM",
-    skills: 20,
-    matches: 6,
-    topMatch: "ML Engineer",
-    score: 79,
-    status: "Completed",
-  },
-  {
-    id: 5,
-    fileName: "Software Engineer CV.pdf",
-    date: "Aug 05, 2026",
-    time: "04:37 PM",
-    skills: 17,
-    matches: 5,
-    topMatch: "Software Engineer",
-    score: 81,
-    status: "Completed",
-  },
-];
-
-function StatusBadge({ status }: { status: Analysis["status"] }) {
-  if (status === "Processing") {
+function StatusBadge({ status }: { status: HistoryItem["status"] }) {
+  if (status === "processing" || status === "pending") {
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
@@ -95,7 +36,7 @@ function StatusBadge({ status }: { status: Analysis["status"] }) {
     );
   }
 
-  if (status === "Failed") {
+  if (status === "failed") {
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-semibold text-destructive">
         Failed
@@ -111,21 +52,56 @@ function StatusBadge({ status }: { status: Analysis["status"] }) {
   );
 }
 
+function formatDate(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+    time: d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
 export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const filteredAnalyses = analyses.filter((analysis) =>
-    analysis.fileName.toLowerCase().includes(searchQuery.toLowerCase()),
+  useEffect(() => {
+    async function loadHistory() {
+      setIsLoading(true);
+      setLoadError("");
+
+      const result = await getAnalysisHistory();
+
+      if (result.error) {
+        setLoadError(result.error.message);
+      } else if (result.data?.history) {
+        setHistory(result.data.history);
+      }
+
+      setIsLoading(false);
+    }
+
+    loadHistory();
+  }, []);
+
+  const filteredAnalyses = history.filter((item) =>
+    item.resumeFileName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const latestMatchScore = history[0]?.topJobMatch?.score ?? null;
 
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-
-        {/* =====================================================
-            HEADER
-            ===================================================== */}
-
+        {/* HEADER */}
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link
@@ -140,12 +116,10 @@ export default function HistoryPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <BarChart3 className="h-5 w-5" />
               </div>
-
               <div>
                 <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
                   Analysis History
                 </h1>
-
                 <p className="mt-1 text-sm text-muted-foreground">
                   Review your previous CV analyses and career insights.
                 </p>
@@ -159,10 +133,7 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* =====================================================
-            SUMMARY CARDS
-            ===================================================== */}
-
+        {/* SUMMARY CARDS */}
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between">
@@ -170,12 +141,8 @@ export default function HistoryPage() {
                 <p className="text-xs font-medium text-muted-foreground">
                   Total Analyses
                 </p>
-
-                <p className="mt-2 text-2xl font-extrabold">
-                  {analyses.length}
-                </p>
+                <p className="mt-2 text-2xl font-extrabold">{history.length}</p>
               </div>
-
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <BarChart3 className="h-5 w-5" />
               </div>
@@ -188,10 +155,10 @@ export default function HistoryPage() {
                 <p className="text-xs font-medium text-muted-foreground">
                   Latest Match
                 </p>
-
-                <p className="mt-2 text-2xl font-extrabold">88%</p>
+                <p className="mt-2 text-2xl font-extrabold">
+                  {latestMatchScore !== null ? `${latestMatchScore}%` : "—"}
+                </p>
               </div>
-
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <Target className="h-5 w-5" />
               </div>
@@ -202,12 +169,12 @@ export default function HistoryPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">
-                  Skills Detected
+                  Analyses Completed
                 </p>
-
-                <p className="mt-2 text-2xl font-extrabold">18</p>
+                <p className="mt-2 text-2xl font-extrabold">
+                  {history.filter((h) => h.status === "completed").length}
+                </p>
               </div>
-
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Sparkles className="h-5 w-5" />
               </div>
@@ -215,14 +182,10 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* =====================================================
-            SEARCH
-            ===================================================== */}
-
+        {/* SEARCH */}
         <div className="mt-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
             <input
               type="search"
               value={searchQuery}
@@ -233,211 +196,128 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* =====================================================
-            ANALYSIS LIST
-            ===================================================== */}
-
+        {/* ANALYSIS LIST */}
         <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-
-          {/* Section Header */}
-
           <div className="border-b border-border px-5 py-4">
             <h2 className="font-bold">Previous Analyses</h2>
-
             <p className="mt-1 text-xs text-muted-foreground">
               Your recent CV analysis activity.
             </p>
           </div>
 
-          {/* Desktop Column Header */}
-
-          <div className="hidden border-b border-border bg-muted/20 px-5 py-3 lg:grid lg:grid-cols-[minmax(260px,1fr)_70px_80px_minmax(150px,180px)_70px_110px_40px] lg:items-center lg:gap-4">
+          <div className="hidden border-b border-border bg-muted/20 px-5 py-3 lg:grid lg:grid-cols-[minmax(260px,1fr)_minmax(150px,180px)_70px_110px_40px] lg:items-center lg:gap-4">
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               CV
             </span>
-
-            <span className="text-center text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              Skills
-            </span>
-
-            <span className="text-center text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              Matches
-            </span>
-
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               Top Match
             </span>
-
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               Score
             </span>
-
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               Status
             </span>
-
             <span />
           </div>
 
-          {/* Analysis Rows */}
-
           <div className="divide-y divide-border">
-            {filteredAnalyses.length > 0 ? (
-              filteredAnalyses.map((analysis) => (
-                <div
-                  key={analysis.id}
-                  className="group grid gap-5 px-5 py-5 transition hover:bg-muted/30 lg:grid-cols-[minmax(260px,1fr)_70px_80px_minmax(150px,180px)_70px_110px_40px] lg:items-center lg:gap-4"
-                >
-                  {/* ==================================================
-                      CV FILE
-                      ================================================== */}
-
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <FileText className="h-5 w-5" />
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">
-                        {analysis.fileName}
-                      </p>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <CalendarDays className="h-3.5 w-3.5" />
-                          {analysis.date}
-                        </span>
-
-                        <span className="flex items-center gap-1">
-                          <Clock3 className="h-3.5 w-3.5" />
-                          {analysis.time}
-                        </span>
+            {isLoading ? (
+              <div className="px-5 py-16 text-center text-sm text-muted-foreground">
+                Loading your history...
+              </div>
+            ) : loadError ? (
+              <div className="px-5 py-16 text-center text-sm text-destructive">
+                {loadError}
+              </div>
+            ) : filteredAnalyses.length > 0 ? (
+              filteredAnalyses.map((item) => {
+                const { date, time } = formatDate(item.createdAt);
+                return (
+                  <div
+                    key={item.analysisId}
+                    className="group grid gap-5 px-5 py-5 transition hover:bg-muted/30 lg:grid-cols-[minmax(260px,1fr)_minmax(150px,180px)_70px_110px_40px] lg:items-center lg:gap-4"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">
+                          {item.resumeFileName}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            {date}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock3 className="h-3.5 w-3.5" />
+                            {time}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* ==================================================
-                      SKILLS
-                      ================================================== */}
+                    <div className="flex min-w-0 items-center justify-between gap-4 lg:block">
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
+                        Top Match
+                      </span>
+                      <p className="truncate text-sm font-bold lg:mt-1">
+                        {item.topJobMatch?.title ?? "—"}
+                      </p>
+                    </div>
 
-                  <div className="flex items-center justify-between lg:block lg:text-center">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
-                      Skills
-                    </span>
+                    <div className="flex items-center justify-between lg:block">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
+                        Score
+                      </span>
+                      <p className="text-lg font-extrabold text-primary">
+                        {item.topJobMatch ? `${item.topJobMatch.score}%` : "—"}
+                      </p>
+                    </div>
 
-                    <p className="text-sm font-bold">
-                      {analysis.skills}
-                    </p>
-                  </div>
+                    <div className="flex items-center justify-between lg:block">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
+                        Status
+                      </span>
+                      <StatusBadge status={item.status} />
+                    </div>
 
-                  {/* ==================================================
-                      MATCHES
-                      ================================================== */}
-
-                  <div className="flex items-center justify-between lg:block lg:text-center">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
-                      Matches
-                    </span>
-
-                    <p className="text-sm font-bold">
-                      {analysis.matches}
-                    </p>
-                  </div>
-
-                  {/* ==================================================
-                      TOP MATCH
-                      ================================================== */}
-
-                  <div className="flex min-w-0 items-center justify-between gap-4 lg:block">
-                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
-                      Top Match
-                    </span>
-
-                    <p
-                      className="truncate text-sm font-bold lg:mt-1"
-                      title={analysis.topMatch}
+                    <button
+                      type="button"
+                      aria-label={`View ${item.resumeFileName}`}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border transition hover:border-primary/30 hover:bg-primary/5"
                     >
-                      {analysis.topMatch}
-                    </p>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
                   </div>
-
-                  {/* ==================================================
-                      SCORE
-                      ================================================== */}
-
-                  <div className="flex items-center justify-between lg:block">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
-                      Score
-                    </span>
-
-                    <p className="text-lg font-extrabold text-primary">
-                      {analysis.score}%
-                    </p>
-                  </div>
-
-                  {/* ==================================================
-                      STATUS
-                      ================================================== */}
-
-                  <div className="flex items-center justify-between lg:block">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
-                      Status
-                    </span>
-
-                    <StatusBadge status={analysis.status} />
-                  </div>
-
-                  {/* ==================================================
-                      VIEW
-                      ================================================== */}
-
-                  <button
-                    type="button"
-                    aria-label={`View ${analysis.fileName}`}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border transition hover:border-primary/30 hover:bg-primary/5"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              ))
+                );
+              })
             ) : (
-              /* ==================================================
-                 EMPTY SEARCH STATE
-                 ================================================== */
-
               <div className="px-5 py-16 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                   <Search className="h-5 w-5" />
                 </div>
-
-                <h3 className="mt-4 text-sm font-bold">
-                  No analyses found
-                </h3>
-
+                <h3 className="mt-4 text-sm font-bold">No analyses found</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Try searching with a different CV name.
+                  {searchQuery
+                    ? "Try searching with a different CV name."
+                    : "Upload a CV from the home page to get started."}
                 </p>
               </div>
             )}
           </div>
         </section>
 
-        {/* =====================================================
-            PRIVACY INFORMATION
-            ===================================================== */}
-
+        {/* PRIVACY INFORMATION */}
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-primary/10 bg-primary/5 p-4">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-
           <div>
-            <p className="text-sm font-bold">
-              Your analysis data is private
-            </p>
-
+            <p className="text-sm font-bold">Your analysis data is private</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Your CVs and career analysis are linked to your account and
-              should only be accessible to you. Backend authorization will
-              enforce this when the API is connected.
+              Your CVs and career analysis are linked to your account and are
+              only accessible to you, enforced by database-level security.
             </p>
           </div>
         </div>

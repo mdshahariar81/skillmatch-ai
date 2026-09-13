@@ -1,37 +1,12 @@
 /**
  * SkillMatch AI - Frontend API Client
  *
- * PURPOSE:
- * This file keeps all backend API communication in one place.
- *
- * IMPORTANT FOR BACKEND DEVELOPER:
- * Frontend components should NOT contain random fetch() calls.
- * When the backend API is ready, update the endpoint/base URL here.
- *
- * SECURITY:
- * - Never put Supabase secret/service-role keys here.
- * - Never put Gemini/API provider secret keys in frontend code.
- * - Authentication should be handled using the user's authenticated session.
- * - Backend MUST validate ownership, file type, file size and permissions.
+ * Talks directly to Supabase (Auth, Storage, Database, Edge Functions).
+ * Function names/signatures kept identical to the original design so
+ * components (CVUpload, AnalysisDashboard) don't need changes.
  */
 
-// ============================================================
-// API BASE URL
-// ============================================================
-//
-// BACKEND DEVELOPER:
-// Replace this environment variable with the deployed backend URL.
-//
-// Example:
-// NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com
-//
-// For local development, your friend can configure the value
-// inside frontend/.env.local.
-//
-// DO NOT hardcode secret keys here.
-//
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { supabase } from "./supabase";
 
 // ============================================================
 // COMMON API RESPONSE TYPES
@@ -48,6 +23,35 @@ export interface ApiResponse<T> {
 }
 
 // ============================================================
+// TEXT EXTRACTION (client-side, doc section 22-23)
+// ============================================================
+
+async function extractTextFromFile(file: File): Promise<string> {
+  if (file.type === "application/pdf") {
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
+    }
+    return fullText;
+  }
+
+  // DOCX
+  const mammoth = await import("mammoth");
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+// ============================================================
 // RESUME TYPES
 // ============================================================
 
@@ -57,63 +61,61 @@ export interface ResumeUploadResponse {
   status: "uploaded" | "processing" | "failed";
 }
 
-/**
- * Upload CV metadata/file.
- *
- * BACKEND ENDPOINT:
- * POST /api/resumes
- *
- * BACKEND RESPONSIBILITIES:
- * - Authenticate user / identify guest session
- * - Validate PDF/DOCX
- * - Validate maximum 5 MB
- * - Store file securely
- * - Verify ownership
- * - Never expose private storage URLs publicly
- */
 export async function uploadResume(
   file: File
 ): Promise<ApiResponse<ResumeUploadResponse>> {
-  const formData = new FormData();
-
-  formData.append("file", file);
-
   try {
-    const response = await fetch(`${API_BASE_URL}/api/resumes`, {
-      method: "POST",
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      // IMPORTANT:
-      // Do NOT manually set Content-Type for FormData.
-      // The browser automatically creates the correct multipart boundary.
-      body: formData,
+    if (userError || !user) {
+      return { error: { message: "You must be logged in to upload a CV." } };
+    }
 
-      // BACKEND AUTH:
-      // When Supabase authentication is connected,
-      // the authenticated session/token should be included here
-      // according to the final backend authentication architecture.
-      credentials: "include",
-    });
+    // Extract text client-side (recommended MVP approach, doc section 23)
+    let extractedText: string;
+    try {
+      extractedText = await extractTextFromFile(file);
+    } catch {
+      return { error: { message: "Could not read text from this file." } };
+    }
 
-    const result = await response.json();
+    if (!extractedText.trim()) {
+      return { error: { message: "No readable text found in this CV." } };
+    }
 
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "CV upload failed.",
-          code: result?.code,
-        },
-      };
+    // Upload the original file to private storage
+    const storagePath = `${user.id}/${crypto.randomUUID()}/${file.name}`;
+    const { error: storageError } = await supabase.storage
+      .from("resumes")
+      .upload(storagePath, file);
+
+    if (storageError) {
+      return { error: { message: "File upload failed: " + storageError.message } };
+    }
+
+    // Save resume record with extracted text
+    const { data: resume, error: dbError } = await supabase
+      .from("resumes")
+      .insert({
+        user_id: user.id,
+        file_name: file.name,
+        file_type: file.type,
+        file_size: file.size,
+        storage_path: storagePath,
+        extracted_text: extractedText,
+      })
+      .select()
+      .single();
+
+    if (dbError || !resume) {
+      return { error: { message: "Could not save resume: " + dbError?.message } };
     }
 
     return {
-      data: result,
+      data: { id: resume.id, fileName: resume.file_name, status: "uploaded" },
     };
   } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
-      },
-    };
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
 
@@ -123,22 +125,19 @@ export async function uploadResume(
 
 export interface AnalysisResponse {
   id: string;
-
   status: "pending" | "processing" | "completed" | "failed";
-
   summary: {
     skillsDetected: number;
     jobMatches: number;
     skillsToImprove: number;
+    aiSummary?: string | null;
   };
-
   skills: {
     id: string;
     name: string;
     proficiency: number;
     confidence: number;
   }[];
-
   jobMatches: {
     jobId: string;
     title: string;
@@ -146,7 +145,6 @@ export interface AnalysisResponse {
     matchedSkills: string[];
     missingSkills: string[];
   }[];
-
   skillGaps: {
     skill: string;
     priority: "high" | "medium" | "low";
@@ -155,61 +153,21 @@ export interface AnalysisResponse {
   }[];
 }
 
-/**
- * Start CV analysis.
- *
- * BACKEND ENDPOINT:
- * POST /api/analyze
- *
- * SECURITY:
- * The backend must NOT trust the resumeId sent by the frontend.
- * It must verify that the resume belongs to the current user/session.
- *
- * BACKEND SHOULD ALSO:
- * - Apply guest analysis limit
- * - Apply rate limiting
- * - Prevent duplicate abuse
- * - Validate request body
- * - Treat CV text as untrusted input
- */
 export async function analyzeResume(
   resumeId: string
 ): Promise<ApiResponse<{ analysisId: string; status: string }>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      credentials: "include",
-
-      body: JSON.stringify({
-        resumeId,
-      }),
+    const { data, error } = await supabase.functions.invoke("analyze-cv", {
+      body: { resumeId },
     });
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "Analysis could not be started.",
-          code: result?.code,
-        },
-      };
+    if (error) {
+      return { error: { message: "Analysis could not be started: " + error.message } };
     }
 
-    return {
-      data: result,
-    };
+    return { data: { analysisId: data.id, status: data.status } };
   } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
-      },
-    };
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
 
@@ -217,47 +175,58 @@ export async function analyzeResume(
 // GET ANALYSIS RESULT
 // ============================================================
 
-/**
- * Get completed analysis.
- *
- * BACKEND ENDPOINT:
- * GET /api/analysis/:id
- *
- * BACKEND SECURITY:
- * Only return an analysis if it belongs to the authenticated user.
- */
 export async function getAnalysis(
   analysisId: string
 ): Promise<ApiResponse<AnalysisResponse>> {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/analysis/${analysisId}`,
-      {
-        method: "GET",
-        credentials: "include",
-      }
-    );
+    const { data: analysis, error } = await supabase
+      .from("analyses")
+      .select(`
+        id, status, overall_score, summary,
+        detected_skills ( skill_id, proficiency, confidence, skills(name) ),
+        job_matches ( job_role_id, match_score, matched_skills, missing_skills, job_roles(title) ),
+        skill_gaps ( skill_id, current_level, required_level, priority, skills(name) )
+      `)
+      .eq("id", analysisId)
+      .single();
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "Unable to load analysis.",
-          code: result?.code,
-        },
-      };
+    if (error || !analysis) {
+      return { error: { message: "Unable to load analysis." } };
     }
 
-    return {
-      data: result,
-    };
-  } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
+    const result: AnalysisResponse = {
+      id: analysis.id,
+      status: analysis.status,
+      summary: {
+        skillsDetected: analysis.summary?.skillsDetected ?? 0,
+        jobMatches: analysis.summary?.jobMatches ?? 0,
+        skillsToImprove: analysis.summary?.skillsToImprove ?? 0,
+        aiSummary: analysis.summary?.aiSummary ?? null,
       },
+      skills: (analysis.detected_skills ?? []).map((s: any) => ({
+        id: s.skill_id,
+        name: s.skills?.name ?? "Unknown",
+        proficiency: s.proficiency,
+        confidence: s.confidence,
+      })),
+      jobMatches: (analysis.job_matches ?? []).map((j: any) => ({
+        jobId: j.job_role_id,
+        title: j.job_roles?.title ?? "Unknown",
+        score: j.match_score,
+        matchedSkills: j.matched_skills ?? [],
+        missingSkills: j.missing_skills ?? [],
+      })),
+      skillGaps: (analysis.skill_gaps ?? []).map((g: any) => ({
+        skill: g.skills?.name ?? "Unknown",
+        priority: g.priority,
+        currentLevel: g.current_level,
+        requiredLevel: g.required_level,
+      })),
     };
+
+    return { data: result };
+  } catch {
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
 
@@ -265,42 +234,17 @@ export async function getAnalysis(
 // HISTORY
 // ============================================================
 
-/**
- * Get user's previous CV analyses.
- *
- * BACKEND ENDPOINT:
- * GET /api/history
- *
- * SECURITY:
- * Backend must return ONLY the current user's records.
- */
 export async function getAnalysisHistory() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/history`, {
-      method: "GET",
-      credentials: "include",
-    });
+    const { data, error } = await supabase.functions.invoke("get-history");
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "Unable to load history.",
-          code: result?.code,
-        },
-      };
+    if (error) {
+      return { error: { message: "Unable to load history: " + error.message } };
     }
 
-    return {
-      data: result,
-    };
+    return { data };
   } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
-      },
-    };
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
 
@@ -308,102 +252,47 @@ export async function getAnalysisHistory() {
 // ROADMAP
 // ============================================================
 
-/**
- * Generate a roadmap for the user's dream job.
- *
- * BACKEND ENDPOINT:
- * POST /api/roadmaps
- *
- * Example request:
- * {
- *   targetJob: "Machine Learning Engineer",
- *   analysisId: "uuid"
- * }
- *
- * BACKEND SECURITY:
- * - Validate targetJob
- * - Verify analysis ownership
- * - Rate-limit roadmap generation
- * - Validate AI-generated output before storing
- */
-export async function generateRoadmap(
-  targetJob: string,
-  analysisId: string
-) {
+export async function generateRoadmap(targetJob: string, analysisId: string) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/roadmaps`, {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      credentials: "include",
-
-      body: JSON.stringify({
-        targetJob,
-        analysisId,
-      }),
+    const { data, error } = await supabase.functions.invoke("generate-roadmap", {
+      body: { targetJob, analysisId },
     });
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "Unable to generate roadmap.",
-          code: result?.code,
-        },
-      };
+    if (error) {
+      return { error: { message: "Unable to generate roadmap: " + error.message } };
     }
 
-    return {
-      data: result,
-    };
+    return { data };
   } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
-      },
-    };
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
 
-/**
- * Get a previously generated roadmap.
- *
- * BACKEND ENDPOINT:
- * GET /api/roadmaps/:id
- */
 export async function getRoadmap(roadmapId: string) {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/roadmaps/${roadmapId}`,
-      {
-        method: "GET",
-        credentials: "include",
-      }
-    );
+    const { data: roadmap, error } = await supabase
+      .from("roadmaps")
+      .select(`
+        id, target_job,
+        roadmap_steps ( step_number, title, status )
+      `)
+      .eq("id", roadmapId)
+      .single();
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      return {
-        error: {
-          message: result?.message || "Unable to load roadmap.",
-          code: result?.code,
-        },
-      };
+    if (error || !roadmap) {
+      return { error: { message: "Unable to load roadmap." } };
     }
 
     return {
-      data: result,
-    };
-  } catch {
-    return {
-      error: {
-        message: "Unable to connect to the backend.",
+      data: {
+        roadmapId: roadmap.id,
+        targetJob: roadmap.target_job,
+        steps: (roadmap.roadmap_steps ?? []).sort(
+          (a: any, b: any) => a.step_number - b.step_number
+        ),
       },
     };
+  } catch {
+    return { error: { message: "Unable to connect to the backend." } };
   }
 }
